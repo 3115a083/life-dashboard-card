@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 const registry = new Map();
+const heartTimestamp = new Date().toISOString();
 
 globalThis.HTMLElement = class {
   attachShadow() {
@@ -93,7 +94,7 @@ card.hass = {
       attributes: { unit_of_measurement: "kcal" },
     },
     "sensor.alice_heart_rate": {
-      state: "72", last_changed: "2026-11-14T12:00:00Z",
+      state: "72", last_changed: heartTimestamp,
       attributes: { unit_of_measurement: "bpm" },
     },
     "sensor.alice_last_health_sync": {
@@ -186,7 +187,7 @@ card.hass = {
   ...card._hass,
   states: {
     ...card._hass.states,
-    "sensor.alice_heart_rate": { state: "73", last_changed: "2026-11-14T12:01:00Z", attributes: { unit_of_measurement: "bpm" } },
+    "sensor.alice_heart_rate": { state: "73", last_changed: new Date(Date.now() + 60000).toISOString(), attributes: { unit_of_measurement: "bpm" } },
   },
 };
 assert.equal(renderCount, 1, "a displayed Life Dashboard value change must rerender the card");
