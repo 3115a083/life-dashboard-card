@@ -1,9 +1,9 @@
-/* Life Dashboard Card v1.0.0
+/* Life Dashboard Card v1.1.0
  * A dependency-free Lovelace card for owen282000/life-dashboard-ha.
  * MIT License
  */
 
-const HB_VERSION = "1.0.0";
+const HB_VERSION = "1.1.0";
 const HB_METRICS = [
   "last_sync_time", "last_apple_workout", "steps", "active_calories",
   "exercise_time", "distance", "sleep_duration", "sleep_deep_hours",
@@ -31,10 +31,33 @@ const LD_STATISTICS = {
 };
 const LD_SUMS = new Set(["steps", "active_calories"]);
 
+// Garmin API keys are stable even when Home Assistant entity IDs are renamed
+// or translated. Ordered candidates prefer the actual/latest measurement.
+const GC_SENSORS = {
+  last_sync_time: [["lastSyncTimestamp", "last_synced"]],
+  last_apple_workout: [["lastActivity", "last_activity"]],
+  steps: [["totalSteps", "total_steps"]],
+  active_calories: [["activeKilocalories", "active_calories"]],
+  distance: [["totalDistanceMeters", "total_distance"]],
+  sleep_duration: [["measurableAsleepDurationMinutes", "sleep_duration"], ["sleepTimeMinutes", "total_sleep_duration"], ["sleepTimeSeconds", "total_sleep_duration"]],
+  sleep_deep_hours: [["deepSleepMinutes", "deep_sleep"], ["deepSleepSeconds", "deep_sleep"]],
+  sleep_core_hours: [["lightSleepMinutes", "light_sleep"], ["lightSleepSeconds", "light_sleep"]],
+  sleep_rem_hours: [["remSleepMinutes", "rem_sleep"], ["remSleepSeconds", "rem_sleep"]],
+  heart_rate: [["latestHeartRate", "latest_heart_rate"]],
+  resting_heart_rate: [["restingHeartRate", "resting_heart_rate"]],
+  heart_rate_variability: [["hrvLastNightAvg", "hrv_last_night_avg"]],
+  oxygen_saturation: [["latestSpo2", "latest_spo2"], ["averageSpo2", "avg_spo2"]],
+  respiratory_rate: [["latestRespirationValue", "latest_respiration"], ["avgSleepRespirationValue", "avg_sleep_respiration"]],
+  body_mass: [["weightKg", "weight"], ["weight", "weight"]],
+  body_fat_percentage: [["bodyFat", "body_fat"]],
+  vo2_max: [["vo2Max", "vo2_max"]],
+};
+const CARD_SOURCES = new Set(["auto", "life_dashboard", "garmin_connect"]);
+
 const HB_TRANSLATIONS = {
   en: {
-    title: "Health overview", synced: "Synced", noData: "No Life Dashboard sensors found",
-    noDataHint: "Sync Life Dashboard Companion once, or set user_id/entities in the card configuration.",
+    title: "Health overview", synced: "Synced", noData: "No Life Dashboard or Garmin Connect sensors found",
+    noDataHint: "Sync Life Dashboard or Garmin Connect, then select a source/profile or configure entities.",
     activity: "Activity · 7 days", sleep: "Sleep stages · 7 days", heart: "Heart rate · 24 hours",
     steps: "Steps", calories: "Active calories", exercise: "Exercise", distance: "Distance",
     sleepDuration: "Sleep", deep: "Deep", core: "Light", rem: "REM",
@@ -59,8 +82,8 @@ const HB_TRANSLATIONS = {
 };
 
 HB_TRANSLATIONS.de = {
-  ...HB_TRANSLATIONS.en, title: "Gesundheit", synced: "Synchronisiert", noData: "Keine Life-Dashboard-Sensoren gefunden",
-  noDataHint: "Life Dashboard Companion synchronisieren oder Gerätepräfix und Entitäten konfigurieren.",
+  ...HB_TRANSLATIONS.en, title: "Gesundheit", synced: "Synchronisiert", noData: "Keine Life-Dashboard- oder Garmin-Sensoren gefunden",
+  noDataHint: "Life Dashboard oder Garmin Connect synchronisieren, dann Datenquelle und Profil auswählen.",
   activity: "Aktivität", sleep: "Schlafphasen", heart: "Herzfrequenz · 24 Stunden", steps: "Schritte",
   calories: "Aktive Kalorien", exercise: "Training", distance: "Distanz", sleepDuration: "Schlaf",
   deep: "Tief", core: "Leicht", rem: "REM", restingHeartRate: "Ruhepuls", respiratory: "Atemfrequenz",
@@ -71,7 +94,7 @@ HB_TRANSLATIONS.de = {
 
 const HB_EDITOR_LABELS = {
   en: {
-    title: "Title", language: "Language", user_id: "Life Dashboard device prefix",
+    title: "Title", language: "Language", user_id: "Device prefix / profile ID", source: "Data source",
     days: "History period", step_goal: "Daily step goal", calorie_goal: "Daily active calorie goal",
     show_activity: "Show activity chart", show_sleep: "Show sleep chart",
     show_heart_rate: "Show heart-rate chart", show_body: "Show body metrics",
@@ -124,6 +147,7 @@ class LifeDashboardCard extends HTMLElement {
   setConfig(config) {
     this.config = {
       title: undefined,
+      source: "auto",
       user_id: undefined,
       statistic_entry_id: undefined,
       statistics: {},
@@ -138,7 +162,8 @@ class LifeDashboardCard extends HTMLElement {
       entities: {},
       ...config,
     };
-    if (!this.config.entities || typeof this.config.entities !== "object") {
+    if (!CARD_SOURCES.has(this.config.source)) throw new Error("source must be auto, life_dashboard, or garmin_connect");
+    if (!this.config.entities || typeof this.config.entities !== "object" || Array.isArray(this.config.entities)) {
       throw new Error("entities must be a mapping of metric names to entity IDs");
     }
     this._configGeneration = (this._configGeneration || 0) + 1;
@@ -206,6 +231,45 @@ class LifeDashboardCard extends HTMLElement {
       }
       profiles.set(profile.id, profile);
     }
+    const garminEntries = new Map();
+    for (const entity of registry) {
+      if (entity.platform !== "garmin_connect" || !entity.config_entry_id || !states[entity.entity_id]) continue;
+      if (!garminEntries.has(entity.config_entry_id)) garminEntries.set(entity.config_entry_id, []);
+      garminEntries.get(entity.config_entry_id).push(entity);
+    }
+    const registeredGarmin = new Set();
+    for (const [entry, entities] of garminEntries) {
+      const mapped = {};
+      for (const [metric, candidates] of Object.entries(GC_SENSORS)) {
+        const entity = candidates.map(([key]) => entities.find(e => e.unique_id?.endsWith(`_${key}`))).find(Boolean)
+          || candidates.map(([,suffix]) => entities.find(e => e.entity_id.endsWith(`_${suffix}`))).find(Boolean);
+        if (entity) { mapped[metric] = entity.entity_id; registeredGarmin.add(entity.entity_id); }
+      }
+      if (!Object.keys(mapped).length) continue;
+      const anchor = mapped.steps || mapped.last_sync_time || Object.values(mapped)[0];
+      const label = states[anchor]?.attributes?.friendly_name || "Garmin Connect";
+      profiles.set(`garmin_connect:${entry}`, {
+        id: `garmin_connect:${entry}`, source: "garmin_connect", label: `Garmin Connect: ${label}`,
+        aliases: [...new Set(Object.entries(mapped).flatMap(([metric, id]) => GC_SENSORS[metric]
+          .filter(([,suffix]) => id.endsWith(`_${suffix}`)).map(([,suffix]) => id.slice(7, -suffix.length - 1))))],
+        entities: mapped,
+      });
+    }
+    for (const entity of Object.keys(states).sort()) {
+      const match = /^sensor\.(garmin_connect(?:_[a-z0-9]+)*)_total_steps$/.exec(entity);
+      if (!match || registeredGarmin.has(entity)) continue;
+      // Once registry data identifies a different integration, never claim it.
+      const registered = registry.find(item => item.entity_id === entity);
+      if (registered && registered.platform !== "garmin_connect") continue;
+      const prefix = match[1], mapped = {};
+      for (const [metric, candidates] of Object.entries(GC_SENSORS)) {
+        const id = candidates.map(([, suffix]) => `sensor.${prefix}_${suffix}`).find(id => states[id]);
+        if (id) mapped[metric] = id;
+      }
+      profiles.set(`garmin_connect:${prefix}`, {
+        id: `garmin_connect:${prefix}`, source: "garmin_connect", label: `Garmin Connect: ${prefix}`, entities: mapped,
+      });
+    }
     return [...profiles.values()].map(profile => ({ ...profile, count: Object.keys(profile.entities).length }))
       .sort((a, b) => a.id.localeCompare(b.id));
   }
@@ -213,13 +277,18 @@ class LifeDashboardCard extends HTMLElement {
   static getConfigForm() {
     const lang = (globalThis.navigator?.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
     const labels = HB_EDITOR_LABELS[lang];
-    const entityFields = Object.keys(LD_SENSORS).map((name) => ({
+    const entityFields = [...new Set([...Object.keys(LD_SENSORS), ...Object.keys(GC_SENSORS)])].map((name) => ({
       name,
       selector: { entity: { filter: { domain: "sensor" } } },
     }));
     return {
       schema: [
         { name: "title", selector: { text: {} } },
+        { name: "source", selector: { select: { mode: "dropdown", options: [
+          { value: "auto", label: "Automatic (Life Dashboard preferred)" },
+          { value: "life_dashboard", label: "Life Dashboard" },
+          { value: "garmin_connect", label: "Garmin Connect" },
+        ] } } },
         {
           name: "language", default: "auto",
           selector: { select: { mode: "dropdown", options: [
@@ -289,23 +358,51 @@ class LifeDashboardCard extends HTMLElement {
     return this._cachedProfiles || [];
   }
 
-  _detectUserId() {
-    return this.config?.user_id ? String(this.config.user_id) : this._profiles()[0]?.id || "";
+  _selectedProfile() {
+    const source = this.config?.source || "auto";
+    const profiles = this._profiles().filter(profile => source === "auto" || (profile.source || "life_dashboard") === source);
+    if (this.config?.user_id) {
+      const id = String(this.config.user_id);
+      return profiles.find(profile => profile.id === id || (profile.source === "garmin_connect" && (profile.id === `garmin_connect:${id}` || profile.aliases?.includes(id.replace(/^garmin_connect:/, "")))));
+    }
+    return profiles.find(profile => !profile.source) || profiles[0];
+  }
+
+  _detectUserId() { return this._selectedProfile()?.id || String(this.config?.user_id || ""); }
+
+  _metricSource(metric) {
+    const entity = this._entity(metric);
+    const registered = this._registry?.find(item => item.entity_id === entity);
+    if (registered) return registered.platform;
+    const owner = this._profiles().find(profile => Object.values(profile.entities).includes(entity));
+    if (owner) return owner.source || "life_dashboard";
+    return this.config?.entities?.[metric] ? "manual" : this._selectedProfile()?.source || "life_dashboard";
+  }
+
+  _normalize(metric, value, state) {
+    const numeric = Number(value);
+    if (metric !== "sleep_duration" && !metric.startsWith("sleep_")) return numeric;
+    const unit = state?.attributes?.unit_of_measurement || this._state(metric)?.attributes?.unit_of_measurement;
+    if (["min", "minutes"].includes(unit)) return numeric / 60;
+    if (["s", "sec", "seconds"].includes(unit)) return numeric / 3600;
+    if (unit === "ms") return numeric / 3600000;
+    return numeric;
   }
 
   _entity(metric) {
     const explicit = this.config?.entities?.[metric];
     if (explicit) return explicit;
-    return this._profiles().find(profile => profile.id === this._detectUserId())?.entities[metric];
+    return this._selectedProfile()?.entities[metric];
   }
 
   _statistic(metric) {
     const override = this.config?.statistics?.[metric];
     if (override) return override;
+    if (this._metricSource(metric) === "garmin_connect" || this.config?.source === "garmin_connect") return undefined;
     const entity = this._entity(metric);
     const registered = this._registry?.find(item => item.entity_id === entity && item.platform === "life_dashboard");
     const entry = this.config?.statistic_entry_id || registered?.config_entry_id;
-    const profileEntry = this._profiles().find(profile => profile.id === this._detectUserId())?.entry_id;
+    const profileEntry = this._selectedProfile()?.entry_id;
     const selectedEntry = entry || (!this.config?.entities?.[metric] ? profileEntry : undefined);
     return selectedEntry && LD_STATISTICS[metric] ? `life_dashboard:${String(selectedEntry).toLowerCase()}_${LD_STATISTICS[metric]}` : undefined;
   }
@@ -314,7 +411,7 @@ class LifeDashboardCard extends HTMLElement {
     const attrs = state?.attributes || {};
     const day = attrs.night || attrs.date;
     if (metric !== "heart_rate" && day) return new Date(`${day}T12:00:00`).getTime();
-    const raw = attrs.measured_at || state?.last_changed || state?.last_updated || state?.lc || state?.lu || Date.now();
+    const raw = attrs.measured_at || attrs.measurement_time || state?.last_changed || state?.last_updated || state?.lc || state?.lu || Date.now();
     return typeof raw === "number" ? raw * (raw < 1e12 ? 1000 : 1) : new Date(raw).getTime();
   }
 
@@ -358,8 +455,9 @@ class LifeDashboardCard extends HTMLElement {
   _format(metric) {
     const state = this._state(metric);
     if (!state || ["unknown", "unavailable", "none", ""].includes(state.state)) return "—";
-    let value = Number(state.state);
+    let value = this._normalize(metric, state.state, state);
     let unit = state.attributes.unit_of_measurement || "";
+    if (metric === "sleep_duration" || metric.startsWith("sleep_")) unit = "h";
     if (!Number.isFinite(value)) return this._escape(state.state);
     if (metric === "distance" && unit === "m" && value >= 1000) {
       value /= 1000; unit = "km";
@@ -464,8 +562,10 @@ class LifeDashboardCard extends HTMLElement {
     const goalPercent = Math.min(100, Math.max(0, stepValue / goal * 100));
     const workoutState = this._state("last_apple_workout");
     const workout = workoutState?.state;
-    const workoutMinutes = Number(workoutState?.attributes?.duration_minutes);
-    const workoutDetail = Number.isFinite(workoutMinutes) ? ` · ${workoutMinutes} min` : "";
+    const workoutAttrs = workoutState?.attributes || {};
+    const workoutMinutes = workoutAttrs.duration_minutes != null ? Number(workoutAttrs.duration_minutes)
+      : workoutAttrs.duration != null ? Number(workoutAttrs.duration) / 60 : NaN;
+    const workoutDetail = Number.isFinite(workoutMinutes) ? ` · ${new Intl.NumberFormat(this._lang(), { maximumFractionDigits: 1 }).format(workoutMinutes)} min` : "";
     const cards = [
       this._metric("steps", this._t("steps"), "mdi:walk", "blue"),
       this._metric("active_calories", this._t("calories"), "mdi:fire", "orange"),
@@ -555,7 +655,7 @@ class LifeDashboardCard extends HTMLElement {
     const points = entity ? [...(this._history[entity] || [])] : [];
     if (metric === "heart_rate" && entity === this._liveHeartEntity) points.push(...this._liveHeartHistory);
     const state = this._state(metric);
-    const currentValue = Number(state?.state);
+    const currentValue = this._normalize(metric, state?.state, state);
     if (state && !["unknown", "unavailable", "", "none"].includes(state.state) && Number.isFinite(currentValue)) {
       const parsedTime=this._currentTime(metric, state);
       points.push({ t:Number.isFinite(parsedTime)?parsedTime:Date.now(), v:currentValue });
@@ -591,11 +691,12 @@ class LifeDashboardCard extends HTMLElement {
       const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       const item = { date, value: 0, has: false, t: null }; index.set(key, item); result.push(item);
     }
+    const usePeak = this._metricSource(metric) === "garmin_connect" && LD_SUMS.has(metric);
     for (const point of this._historyPoints(metric)) {
       const date = new Date(point.t);
       const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
       const item = index.get(key);
-      if (item && Number.isFinite(point.v) && (!item.has || point.t>=item.t)) { item.value=point.v; item.t=point.t; item.has=true; }
+      if (item && Number.isFinite(point.v) && (!item.has || (usePeak ? point.v >= item.value : point.t >= item.t))) { item.value=point.v; item.t=point.t; item.has=true; }
     }
     return result;
   }
@@ -703,7 +804,7 @@ class LifeDashboardCard extends HTMLElement {
     const metrics=["steps","active_calories","sleep_deep_hours","sleep_core_hours","sleep_rem_hours","heart_rate"];
     const entities=[...new Set(metrics.map((m)=>this._entity(m)).filter(Boolean))];
     if (!entities.length && (this._registryLoaded || !this._hass.callWS)) return;
-    const key=`${this._detectUserId()}|${entities.join(",")}|${this.config.days}|${JSON.stringify(this.config.statistics || {})}|${this.config.statistic_entry_id || ""}`;
+    const key=`${this.config.source}|${this._detectUserId()}|${entities.join(",")}|${this.config.days}|${JSON.stringify(this.config.statistics || {})}|${this.config.statistic_entry_id || ""}`;
     if (key===this._historyKey && Date.now()-this._historyAt<300000) return;
     this._loadHistory(entities,key);
   }
@@ -753,9 +854,14 @@ class LifeDashboardCard extends HTMLElement {
           for (const [index, series] of (response || []).entries()) {
             const entity = series.find(point => point.entity_id)?.entity_id || fallback[index];
             const metric = metrics.find(metric => this._entity(metric) === entity);
-            history[entity] = series.filter(point => (point.state ?? point.s) != null && !["", "unknown", "unavailable"].includes(point.state ?? point.s)).map(point => ({
-              t: this._currentTime(metric, point), v: Number(point.state ?? point.s),
-            })).filter(point => Number.isFinite(point.t) && Number.isFinite(point.v));
+            let attributes = {};
+            history[entity] = series.map(point => {
+              attributes = point.attributes || attributes;
+              const value = point.state ?? point.s;
+              if (value == null || ["", "unknown", "unavailable", "none"].includes(value)) return null;
+              const state = { ...point, attributes };
+              return { t: this._currentTime(metric, state), v: this._normalize(metric, value, state) };
+            }).filter(point => point && Number.isFinite(point.t) && Number.isFinite(point.v));
           }
         } catch (error) { failed = true; console.warn("Life Dashboard history unavailable", error); }
       }
@@ -807,16 +913,16 @@ class LifeDashboardCardEditor extends HTMLElement {
   _render() {
     if (!this._hass || !globalThis.document) return;
     const lang = (this._hass.language || globalThis.navigator?.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
-    const profiles = LifeDashboardCard.discoverProfiles(this._hass, this._registry);
+    const profiles = LifeDashboardCard.discoverProfiles(this._hass, this._registry).filter(profile => !this._config.source || this._config.source === "auto" || (profile.source || "life_dashboard") === this._config.source);
     const base = LifeDashboardCard.getConfigForm();
     const profileField = {
       name: "_profile_import",
       selector: { select: { mode: "dropdown", options: profiles.map((profile) => ({
         value: profile.id,
-        label: `${profile.id} (${profile.count} ${lang === "ru" ? "сущн." : "entities"})`,
+        label: `${profile.label || profile.id} (${profile.count} ${lang === "ru" ? "сущн." : "entities"})`,
       })) } },
     };
-    this.shadowRoot.innerHTML = `<style>:host{display:block}.profile-note{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:var(--secondary-background-color);color:var(--secondary-text-color);font-size:12px;line-height:1.4}</style><div class="profile-note">${profiles.length ? (lang === "ru" ? "Выберите профиль — найденные сущности автоматически заполнят поля ниже. После импорта любую сущность можно заменить вручную." : "Select a profile to fill the entity fields below automatically. Any imported entity can still be changed manually.") : (lang === "ru" ? "Профили Life Dashboard пока не найдены. Выполните хотя бы одну синхронизацию." : "No Life Dashboard profiles found yet. Complete at least one synchronization.")}</div>`;
+    this.shadowRoot.innerHTML = `<style>:host{display:block}.profile-note{margin:0 0 10px;padding:10px 12px;border-radius:10px;background:var(--secondary-background-color);color:var(--secondary-text-color);font-size:12px;line-height:1.4}</style><div class="profile-note">${profiles.length ? (lang === "ru" ? "Выберите профиль — найденные сущности автоматически заполнят поля ниже. После импорта любую сущность можно заменить вручную." : "Select a profile to fill the entity fields below automatically. Any imported entity can still be changed manually.") : (lang === "ru" ? "Профили Life Dashboard пока не найдены. Выполните хотя бы одну синхронизацию." : "No matching profiles found yet. Sync Life Dashboard or Garmin Connect, or select another data source.")}</div>`;
     const form = document.createElement("ha-form");
     form.hass = this._hass;
     form.data = { ...this._config, _profile_import: undefined };
@@ -836,14 +942,24 @@ class LifeDashboardCardEditor extends HTMLElement {
     const next = { ...(event.detail?.value || this._config) };
     const selected = next._profile_import;
     delete next._profile_import;
+    if (!selected && (next.source || "auto") !== (this._config.source || "auto")) {
+      delete next.user_id;
+      delete next.statistic_entry_id;
+      next.entities = {};
+      next.statistics = {};
+    }
     if (selected) {
       const profile = profiles.find((item) => item.id === selected);
       if (profile) {
         next.user_id = profile.id;
+        next.source = profile.source || "life_dashboard";
         next.statistic_entry_id = profile.entry_id;
+        next.statistics = {};
         next.entities = { ...profile.entities };
       }
     }
+    this._config = next;
+    this._render();
     this.dispatchEvent(new CustomEvent("config-changed", {
       bubbles: true, composed: true, detail: { config: next },
     }));

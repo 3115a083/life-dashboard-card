@@ -1,10 +1,10 @@
 {
   "name": "life-dashboard-card",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "check": "node --check dist/life-dashboard-card.js",
-    "test": "node tests/life-dashboard.mjs"
+    "test": "node tests/garmin-connect.mjs"
   }
 }

@@ -1,13 +1,13 @@
 # Life Dashboard Card
 
-A responsive, dependency-free Home Assistant card for [Life Dashboard](https://github.com/owen282000/life-dashboard-ha).
+A responsive, dependency-free Home Assistant card for [Life Dashboard](https://github.com/owen282000/life-dashboard-ha) and [Garmin Connect](https://github.com/cyberjunky/home-assistant-garmin_connect).
 Fork of [BrainDeLook/health-bridge-dashboard-card](https://github.com/BrainDeLook/health-bridge-dashboard-card), under the original MIT license.
 
 Shows steps, active calories, distance, exercise minutes, sleep, resting heart rate, HRV, oxygen saturation, weight, body fat, lean mass, VO2 max and the last workout. Missing metrics are omitted. Includes English, German and Russian card labels, native theme colors, profile import, entity pickers and responsive charts.
 
 ## Installation
 
-Requires Home Assistant 2026.3 or newer, the Life Dashboard integration with at least one sync, and Recorder for charts. This targets the webhook integration, not the separate Postgres/Grafana stack or MQTT discovery.
+Requires Home Assistant 2026.3 or newer, at least one supported integration with synced sensor data, and Recorder for charts. The Life Dashboard source targets the webhook integration, not the separate Postgres/Grafana stack or MQTT discovery.
 
 1. In HACS, open **Custom repositories**.
 2. Add `https://github.com/3115a083/life-dashboard-card`, category **Dashboard**.
@@ -22,6 +22,49 @@ language: de
 For manual installation, copy `dist/life-dashboard-card.js` to `/config/www/life-dashboard-card.js` and add `/local/life-dashboard-card.js` as a JavaScript module dashboard resource.
 
 The card has its own custom element and filename and can coexist with the original Health Bridge card.
+
+## Garmin Connect
+
+Version 1.1.0 adds [cyberjunky/home-assistant-garmin_connect](https://github.com/cyberjunky/home-assistant-garmin_connect) as a second data source. Update/redownload this card in HACS and refresh the browser before adding:
+
+```yaml
+type: custom:life-dashboard-card
+source: garmin_connect
+language: de
+title: Garmin Connect
+```
+
+In the graphical editor, select **Data source → Garmin Connect**, then **Quick profile import** to select your account. The import fills the entity fields, replaces the previous source's mapping, and clears its Life Dashboard statistics settings. Each Garmin config entry is a separate profile. Multiple accounts and renamed/translated entity IDs are resolved using the entity registry. With both integrations installed, `source: auto` continues to prefer Life Dashboard.
+
+For a specific account, `user_id` accepts the Garmin config entry ID (or `garmin_connect:<entry_id>`). The editor supplies this automatically. Default English entity IDs such as `sensor.garmin_connect_total_steps` also work without registry access; use manual entity mappings for other names when registry access is unavailable.
+
+| Card metric | Garmin sensor key | Notes |
+|---|---|---|
+| `steps` | `totalSteps` | Total steps |
+| `active_calories` | `activeKilocalories` | kcal |
+| `distance` | `totalDistanceMeters` | Respects the sensor's unit |
+| `sleep_duration` | `measurableAsleepDurationMinutes`, then `sleepTimeMinutes` | Time asleep preferred; total sleep window is a fallback |
+| `sleep_deep_hours` | `deepSleepMinutes` | Converted to hours |
+| `sleep_core_hours` | `lightSleepMinutes` | Converted to hours |
+| `sleep_rem_hours` | `remSleepMinutes` | Converted to hours |
+| `heart_rate` | `latestHeartRate` | Optional, disabled by default in the integration |
+| `resting_heart_rate` | `restingHeartRate` | No substitution for current pulse |
+| `heart_rate_variability` | `hrvLastNightAvg` | Last night's average, ms |
+| `oxygen_saturation` | `latestSpo2`, then `averageSpo2` | Latest reading preferred; daily average is a fallback |
+| `respiratory_rate` | `latestRespirationValue`, then `avgSleepRespirationValue` | Latest reading preferred |
+| `body_mass` | `weightKg` | Respects the sensor's unit |
+| `body_fat_percentage` | `bodyFat` | Percent |
+| `vo2_max` | `vo2Max` | Running VO2 max |
+| `last_apple_workout` | `lastActivity` | Last completed activity, with duration when available |
+| `last_sync_time` | `lastSyncTimestamp` | Last watch sync |
+
+The keys in the middle column are the integration's stable unique-ID suffixes, not entity IDs to paste into YAML. Older seconds-based sleep sensors are supported through their units. The card does not equate muscle mass with lean mass or intensity minutes with daily exercise time. Unsupported/missing metrics are omitted.
+
+Enable **Latest Heart Rate** on the Garmin integration's device/entity page if you want the pulse chart. This is the newest sample uploaded from the watch, not a live stream. The card uses its `measurement_time` attribute where available.
+
+Garmin charts use Recorder sensor history. Sleep minutes and seconds are converted to hours, including historical samples. Daily step/calorie charts show the highest recorded total for each day, so a reset near midnight does not erase the day's activity. A later downward revision may therefore leave the earlier peak in the chart. Sleep and other samples use their measurement time when supplied, otherwise Home Assistant receipt time. Preserved sleep values without a measurement date cannot reconstruct which night they originally describe. History availability depends on Recorder retention and starts when Home Assistant recorded the sensors; the card does not fetch or backfill Garmin cloud history.
+
+You can also replace individual metrics on a Life Dashboard card with Garmin sensors through **Metric entities**. Registered Garmin metrics use Recorder while the remaining Life Dashboard metrics continue using external statistics. An explicit `statistics` override takes precedence if configured.
 
 ## Devices and renamed entities
 
@@ -44,7 +87,8 @@ The first profile alphabetically is used if no device is selected. Missing senso
 |---|---|---|
 | `title` | localized | Heading |
 | `language` | HA language | `auto`, `en`, `de`, `ru` |
-| `user_id` | first device | Device prefix, or config entry ID for a fully renamed device |
+| `source` | `auto` | `auto`, `life_dashboard`, or `garmin_connect`; auto prefers Life Dashboard |
+| `user_id` | first matching profile | Life Dashboard device prefix/config entry ID, or Garmin account config entry ID |
 | `days` | 7 | Activity and sleep chart period, 2 to 31 days |
 | `step_goal` | 10000 | Daily step goal |
 | `calorie_goal` | 600 | Active calorie goal, kcal |
@@ -104,7 +148,7 @@ npm run check
 npm test
 ```
 
-Automated tests cover rendering, chart interaction, device separation, renamed sensors, external statistics, backfill dates and missing values. A live Home Assistant installation is still needed for end-to-end verification.
+Automated tests cover rendering, chart interaction, both data sources, account/device separation, renamed sensors, source switching, unit conversion, Recorder history, external statistics, backfill dates and missing values. A live Home Assistant installation is still needed for end-to-end verification.
 
 ## License
 

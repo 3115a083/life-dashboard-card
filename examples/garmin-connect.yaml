@@ -1,0 +1,15 @@
+type: custom:life-dashboard-card
+source: garmin_connect
+title: Garmin Connect
+language: de
+days: 7
+step_goal: 10000
+calorie_goal: 600
+# For multiple accounts, use Quick profile import in the graphical editor.
+# Or set the Garmin integration config entry ID:
+# user_id: YOUR_GARMIN_CONFIG_ENTRY_ID
+# Optional manual mappings for renamed sensors:
+# entities:
+#   steps: sensor.my_garmin_steps
+#   sleep_deep_hours: sensor.my_garmin_deep_sleep
+#   heart_rate: sensor.my_garmin_latest_heart_rate
