@@ -1,207 +1,111 @@
-[Русская версия](README.ru.md)
+# Life Dashboard Card
 
-# Health Bridge Dashboard Card
+A responsive, dependency-free Home Assistant card for [Life Dashboard](https://github.com/owen282000/life-dashboard-ha).
+Fork of [BrainDeLook/health-bridge-dashboard-card](https://github.com/BrainDeLook/health-bridge-dashboard-card), under the original MIT license.
 
-![Health Bridge Dashboard Card preview](images/preview.svg)
+Shows steps, active calories, distance, exercise minutes, sleep, resting heart rate, HRV, oxygen saturation, weight, body fat, lean mass, VO2 max and the last workout. Missing metrics are omitted. Includes English, German and Russian card labels, native theme colors, profile import, entity pickers and responsive charts.
 
-A responsive, dependency-free Home Assistant dashboard card for
-[Health Bridge](https://github.com/gregt1993/Health_Bridge). It automatically
-discovers Health Bridge sensors and displays current health metrics, a step-goal
-progress bar, the latest workout, and Recorder-backed charts for activity, sleep,
-and heart rate.
+## Installation
 
-The card includes English and Russian labels and works without ApexCharts,
-Mushroom, card-mod, or any other frontend dependency.
+Requires Home Assistant 2026.3 or newer, the Life Dashboard integration with at least one sync, and Recorder for charts. This targets the webhook integration, not the separate Postgres/Grafana stack or MQTT discovery.
 
-> This is an independent community project and is not affiliated with the
-> Health Bridge or Health Assistant Link authors.
-
-## Features
-
-- Automatic profile and entity discovery
-- Compact layout that adapts to the card's own width in Masonry and Sections views
-- Current activity, sleep, cardiovascular, and body-composition metrics
-- Activity and heart-rate accordion with equal responsive chart heights
-- Stable dual-axis activity scaling for steps and active calories
-- Linear point-to-point heart-rate graph with a centered dashed reference line and visible measurement markers
-- BPM marker tooltips show when each value was received by Home Assistant
-- Larger chart titles, legends, axes and receipt-time tooltips for steps and active calories
-- Native Home Assistant graphical card editor with entity pickers
-- One-click profile import for multi-profile Health Bridge installations
-- Seven-day activity chart
-- Stacked sleep-stage chart
-- 24-hour heart-rate chart
-- Configurable step goal and visible sections
-- Tap any metric to open the Home Assistant more-info dialog
-- Manual entity overrides for renamed sensors
-- Native Home Assistant theme colors
-
-## Requirements
-
-- Home Assistant 2024.11 or newer
-- [Health Bridge](https://github.com/gregt1993/Health_Bridge), synced at least once
-- Recorder history enabled for charts
-- HACS for the recommended installation method
-
-## Install with HACS as a custom repository
-
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=BrainDeLook&repository=health-bridge-dashboard-card&category=plugin)
-
-If the button is not available:
-
-1. Open **HACS** in Home Assistant.
-2. Open the three-dot menu and select **Custom repositories**.
-3. Add `https://github.com/BrainDeLook/health-bridge-dashboard-card`.
-4. Select **Dashboard** as the category.
-5. Download **Health Bridge Dashboard Card**.
-6. Refresh the browser. If necessary, clear the frontend cache once.
-
-No pull request to the default HACS repository is required for custom-repository
-installation.
-
-## Add the card
-
-Add a **Manual** card to a Home Assistant dashboard:
+1. In HACS, open **Custom repositories**.
+2. Add `https://github.com/3115a083/life-dashboard-card`, category **Dashboard**.
+3. Install **Life Dashboard Card** and refresh the browser.
+4. Add a manual card:
 
 ```yaml
-type: custom:health-bridge-dashboard-card
+type: custom:life-dashboard-card
+language: de
 ```
 
-For a Russian dashboard with common options:
+For manual installation, copy `dist/life-dashboard-card.js` to `/config/www/life-dashboard-card.js` and add `/local/life-dashboard-card.js` as a JavaScript module dashboard resource.
+
+The card has its own custom element and filename and can coexist with the original Health Bridge card.
+
+## Devices and renamed entities
+
+Canonical sensors such as `sensor.my_phone_steps_today` establish a device profile. Select one in the graphical editor's **Quick profile import**, or set the device prefix:
 
 ```yaml
-type: custom:health-bridge-dashboard-card
-title: Здоровье
-language: ru
-days: 7
+type: custom:life-dashboard-card
+user_id: my_phone
+language: de
 step_goal: 10000
 calorie_goal: 600
-show_activity: true
-show_sleep: true
-show_heart_rate: true
-show_body: true
+days: 7
 ```
 
-The card automatically uses the first discovered Health Bridge profile. If
-several people sync data to the same Home Assistant instance, specify the entity
-suffix:
-
-```yaml
-type: custom:health-bridge-dashboard-card
-user_id: daniil
-```
-
-For `sensor.steps_daniil`, the `user_id` is `daniil`.
+The first profile alphabetically is used if no device is selected. Missing sensors never fall back to another phone. The entity registry resolves renamed Life Dashboard sensors and the config entry used by its statistics. If registry access is unavailable, use explicit entity overrides and `statistic_entry_id` for historical statistics.
 
 ## Configuration
 
-| Option | Type | Default | Description |
-|---|---:|---:|---|
-| `title` | string | localized | Card title |
-| `language` | `en` or `ru` | HA language | Interface language |
-| `user_id` | string | auto | Health Bridge entity suffix |
-| `days` | number | `7` | Activity and sleep history, from 2 to 31 days |
-| `step_goal` | number | `10000` | Daily step target |
-| `calorie_goal` | number | `600` | Daily active-calorie target and chart scale |
-| `show_activity` | boolean | `true` | Activity chart |
-| `show_sleep` | boolean | `true` | Sleep-stage chart |
-| `show_heart_rate` | boolean | `true` | 24-hour heart-rate chart |
-| `show_body` | boolean | `true` | Body-composition metrics |
-| `entities` | mapping | `{}` | Explicit metric-to-entity overrides |
+| Option | Default | Meaning |
+|---|---|---|
+| `title` | localized | Heading |
+| `language` | HA language | `auto`, `en`, `de`, `ru` |
+| `user_id` | first device | Device prefix, or config entry ID for a fully renamed device |
+| `days` | 7 | Activity and sleep chart period, 2 to 31 days |
+| `step_goal` | 10000 | Daily step goal |
+| `calorie_goal` | 600 | Active calorie goal, kcal |
+| `show_activity` | true | Activity chart |
+| `show_sleep` | true | Sleep stages |
+| `show_heart_rate` | true | Heart rate chart |
+| `show_body` | true | Body metrics |
+| `entities` | `{}` | Manual metric-to-sensor mapping |
+| `statistic_entry_id` | registry | Phone config entry ID, not device registry ID |
+| `statistics` | `{}` | Manual metric-to-statistic ID mapping |
 
-## Graphical editor
+The entity mapping keys preserve the original card's configuration API. Life Dashboard uses these sensors after the device prefix:
 
-Open the dashboard editor and choose **Edit card** to configure the card without
-writing YAML. The native Home Assistant form lets you change the language,
-history period, daily goals and visible sections. Expand **Metric entities** to
-select any sensor in Home Assistant for each displayed value. This makes it
-possible to combine health entities from different people, integrations or Home
-Assistant servers mirrored into the current instance.
-
-At the top of the editor, **Quick profile import** lists every profile discovered
-from Health Bridge entity suffixes. Selecting a profile immediately fills all
-available metric entity fields and sets `user_id`. The imported mapping is only
-a starting point: expand **Metric entities** afterward to replace any individual
-entity manually. Importing another profile replaces the current metric mapping
-with the entities available for the newly selected profile.
-
-The activity chart uses two stable axes because steps and kilocalories are
-different units: steps are scaled against `step_goal` on the left, while active
-calories are scaled against `calorie_goal` on the right. Hover or focus a daily
-step bar or calorie point to see its value and the time that source state was
-received by Home Assistant. All chart labels use a larger size for readability.
-The heart-rate chart
-uses every recorded state change from the last 24 hours and marks previous BPM
-measurements as individual points. If Recorder returns no earlier samples, the
-card also keeps live heart-rate changes observed while the dashboard is open.
-The heart trace connects each recorded BPM measurement directly to the next one
-with a straight vector and does not extend the last value artificially to the
-right edge. A dashed reference line stays centered in the plot. With only one
-value, the fallback trace remains horizontal and shows a numeric marker. Hover a BPM marker, or
-focus/tap it on a touch device, to see the date and time when Home Assistant
-received that state. This is the receipt time, not the original medical
-measurement time. The heart and activity charts use the same coordinate scale,
-so their axes, labels, markers and tooltips have the same visible size.
-
-The activity chart is expanded the first time the card is loaded and the
-heart-rate chart is collapsed. Either chart header acts as the same toggle:
-pressing either arrow switches from activity to heart rate or back again.
-Exactly one chart always remains open, and the last selection is remembered for
-each detected Health Bridge profile.
-
-Example with renamed entities:
+| Card metric key | Life Dashboard suffix |
+|---|---|
+| `steps` | `steps_today` |
+| `active_calories` | `active_calories_today` |
+| `distance` | `distance_today` |
+| `exercise_time` | `exercise_today` |
+| `last_apple_workout` | `last_workout` |
+| `last_sync_time` | `last_health_sync` |
+| `sleep_duration` | `last_sleep_asleep`, then `last_sleep_duration` |
+| `sleep_deep_hours` | `last_sleep_deep` |
+| `sleep_core_hours` | `last_sleep_light` |
+| `sleep_rem_hours` | `last_sleep_rem` |
+| `body_mass` | `weight` |
+| `body_fat_percentage` | `body_fat` |
+| `heart_rate`, `resting_heart_rate`, `heart_rate_variability`, `oxygen_saturation`, `respiratory_rate`, `lean_body_mass`, `vo2_max` | same suffix as metric key |
 
 ```yaml
-type: custom:health-bridge-dashboard-card
+type: custom:life-dashboard-card
 entities:
-  steps: sensor.my_steps
-  heart_rate: sensor.my_heart_rate
-  sleep_duration: sensor.my_sleep
+  steps: sensor.renamed_steps
+  body_mass: sensor.renamed_weight
+statistics:
+  steps: life_dashboard:your_config_entry_id_steps
 ```
 
-## Supported Health Bridge metrics
+## History
 
-The card uses whichever supported sensors are available. Missing sensors are
-simply omitted.
+Life Dashboard stores backfilled data as external statistics. The card uses `life_dashboard:<entry>_<metric>`, daily `change` for steps and active calories, daily `mean` for sleep stages, and hourly `mean` for heart rate. The heart chart therefore shows hourly averages plus current/live measurements, not every original heartbeat reading.
 
-- Activity: steps, distance, active calories, exercise time, latest workout
-- Sleep: total, deep, core, and REM sleep
-- Heart and breathing: heart rate, resting heart rate, HRV, SpO₂, respiratory rate
-- Body: weight, body fat, lean body mass, VO₂ max, cardio recovery
-- Status: last Health Bridge synchronization
+Sleep stages use `sleep_deep`, `sleep_light` and `sleep_rem`. They work from statistics even when the corresponding stage sensors are disabled. No stage data is invented when a phone has not sent it.
 
-## Troubleshooting
+Current daily values use the sensor's `date`, sleep uses `night`, and current heart readings use `measured_at` where available. This keeps delayed syncs on their actual date. Tooltip time refers to the measurement or statistic bucket time, falling back to receipt time for sensors without timestamps.
 
-### The card says that no sensors were found
+For manual sensors without a resolvable Life Dashboard statistic, Recorder state history is used as a fallback. That history starts when Home Assistant received the states and cannot reconstruct a phone's earlier backfill. An unavailable statistics API is reported in the card. Current values remain available.
 
-Sync Health Assistant Link at least once. Then open **Developer tools → States**
-and confirm that an entity such as `sensor.steps_<user_id>` exists. If entities
-were renamed, configure them explicitly with `entities:`.
-
-### Current values work, but graphs are empty
-
-Graphs require Home Assistant Recorder history. Confirm that the relevant sensors
-are not excluded from Recorder and allow time for history to accumulate.
-
-### More than one person uses Health Bridge
-
-Set `user_id` separately on each card. The value is the suffix following the
-metric name in the entity ID.
+Statistics refresh on Home Assistant state updates, at most once every five minutes. For older history, use **Send history** in the Life Dashboard Companion app. See the integration's [sensor and statistics reference](https://github.com/owen282000/life-dashboard-ha/blob/main/docs/entities.md).
 
 ## Development
 
-The distributable is intentionally plain JavaScript with no build step:
+No dependencies or build step:
 
-```text
-dist/health-bridge-dashboard-card.js
+```sh
+npm run check
+npm test
 ```
 
-Validate its syntax with:
-
-```bash
-node --check dist/health-bridge-dashboard-card.js
-```
+Automated tests cover rendering, chart interaction, device separation, renamed sensors, external statistics, backfill dates and missing values. A live Home Assistant installation is still needed for end-to-end verification.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Original card copyright retained. This independent fork is not affiliated with either upstream project.

@@ -1,10 +1,10 @@
 {
-  "name": "health-bridge-dashboard-card",
-  "version": "0.6.4",
+  "name": "life-dashboard-card",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check dist/health-bridge-dashboard-card.js",
-    "test": "node tests/smoke.mjs"
+    "check": "node --check dist/life-dashboard-card.js",
+    "test": "node tests/life-dashboard.mjs"
   }
 }

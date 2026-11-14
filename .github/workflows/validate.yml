@@ -27,6 +27,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
       - name: Check distributable
-        run: node --check dist/health-bridge-dashboard-card.js
+        run: node --check dist/life-dashboard-card.js
       - name: Run smoke test
-        run: node tests/smoke.mjs
+        run: npm test

@@ -30,21 +30,21 @@ globalThis.localStorage = {
   setItem(key, value) { this.values.set(key, value); },
 };
 
-await import("../dist/health-bridge-dashboard-card.js");
+await import("../dist/life-dashboard-card.js");
 
-const Card = customElements.get("health-bridge-dashboard-card");
+const Card = customElements.get("life-dashboard-card");
 assert.ok(Card, "the custom element should be registered");
-assert.ok(customElements.get("health-bridge-dashboard-card-editor"), "the dynamic graphical editor should be registered");
+assert.ok(customElements.get("life-dashboard-card-editor"), "the dynamic graphical editor should be registered");
 assert.equal(typeof Card.getConfigElement, "function");
 const discoveredProfiles = Card.discoverProfiles({ states: {
-  "sensor.steps_alice": {},
-  "sensor.heart_rate_alice": {},
-  "sensor.steps_bob": {},
+  "sensor.alice_steps_today": {},
+  "sensor.alice_heart_rate": {},
+  "sensor.bob_steps_today": {},
   "sensor.unrelated_temperature": {},
 } });
 assert.deepEqual(discoveredProfiles, [
-  { id: "alice", count: 2, entities: { steps: "sensor.steps_alice", heart_rate: "sensor.heart_rate_alice" } },
-  { id: "bob", count: 1, entities: { steps: "sensor.steps_bob" } },
+  { id: "alice", count: 2, entities: { steps: "sensor.alice_steps_today", heart_rate: "sensor.alice_heart_rate" } },
+  { id: "bob", count: 1, entities: { steps: "sensor.bob_steps_today" } },
 ]);
 globalThis.document = {
   createElement(name) {
@@ -57,19 +57,19 @@ globalThis.document = {
   },
 };
 const editor = Card.getConfigElement();
-editor.setConfig({ type: "custom:health-bridge-dashboard-card", entities: {} });
+editor.setConfig({ type: "custom:life-dashboard-card", entities: {} });
 editor.hass = { language: "en", states: {
-  "sensor.steps_alice": {},
-  "sensor.heart_rate_alice": {},
+  "sensor.alice_steps_today": {},
+  "sensor.alice_heart_rate": {},
 } };
 assert.equal(editor._form.schema[0].name, "_profile_import");
 editor._form.listeners["value-changed"]({ detail: { value: {
-  type: "custom:health-bridge-dashboard-card", entities: {}, _profile_import: "alice",
+  type: "custom:life-dashboard-card", entities: {}, _profile_import: "alice",
 } } });
 assert.equal(editor.lastEvent.type, "config-changed");
 assert.equal(editor.lastEvent.detail.config.user_id, "alice");
 assert.deepEqual(editor.lastEvent.detail.config.entities, {
-  steps: "sensor.steps_alice", heart_rate: "sensor.heart_rate_alice",
+  steps: "sensor.alice_steps_today", heart_rate: "sensor.alice_heart_rate",
 });
 const configForm = Card.getConfigForm();
 const entityPanel = configForm.schema.find((field) => field.name === "entities");
@@ -80,23 +80,23 @@ assert.equal(Card.getStubConfig().calorie_goal, 600);
 
 const card = new Card();
 card.setConfig({ language: "en", step_goal: 10000 });
-globalThis.localStorage.setItem("health-bridge-dashboard-card:expanded:alice", "none");
+globalThis.localStorage.setItem("life-dashboard-card:expanded:alice", "none");
 card.hass = {
   language: "en",
   states: {
-    "sensor.steps_alice": {
+    "sensor.alice_steps_today": {
       state: "8426",
       attributes: { unit_of_measurement: "steps" },
     },
-    "sensor.active_calories_alice": {
+    "sensor.alice_active_calories_today": {
       state: "513",
       attributes: { unit_of_measurement: "kcal" },
     },
-    "sensor.heart_rate_alice": {
-      state: "72",
+    "sensor.alice_heart_rate": {
+      state: "72", last_changed: "2026-11-14T12:00:00Z",
       attributes: { unit_of_measurement: "bpm" },
     },
-    "sensor.last_sync_time_alice": {
+    "sensor.alice_last_health_sync": {
       state: new Date().toISOString(),
       attributes: {},
     },
@@ -129,7 +129,7 @@ assert.match(card.shadowRoot.innerHTML, /viewBox="0 0 560 210"/);
 assert.match(card.shadowRoot.innerHTML, /data-current-only="true"/);
 assert.match(card.shadowRoot.innerHTML, />72 bpm<\/text>/);
 card._render = interactionRender;
-card._history["sensor.heart_rate_alice"] = [
+card._history["sensor.alice_heart_rate"] = [
   { t: Date.now() - 7200000, v: 84 },
   { t: Date.now() - 3600000, v: 100 },
 ];
@@ -138,7 +138,7 @@ assert.match(card.shadowRoot.innerHTML, /data-current-only="false"/);
 assert.doesNotMatch(card.shadowRoot.innerHTML, /class="heart-point"/);
 assert.match(card.shadowRoot.innerHTML, /class="chart-hit"/);
 assert.match(card.shadowRoot.innerHTML, /class="chart-tooltip"/);
-assert.match(card.shadowRoot.innerHTML, /Received:/);
+assert.match(card.shadowRoot.innerHTML, /Time:/);
 assert.match(card.shadowRoot.innerHTML, /class="chart-sample heart-sample" tabindex="0"/);
 assert.match(card.shadowRoot.innerHTML, /\.chart-tooltip \.tooltip-value \{[^}]+font-size:16px/);
 assert.match(card.shadowRoot.innerHTML, /data-tooltip-size="normal"[^>]+translate/);
@@ -154,17 +154,17 @@ let requestedHistoryPath = "";
 card._hass.callApi = async (_method, path) => {
   requestedHistoryPath = path;
   return [[
-    { entity_id: "sensor.heart_rate_alice", s: "84", lu: (Date.now() - 7200000) / 1000 },
-    { s: "100", lu: (Date.now() - 3600000) / 1000 },
+    { entity_id: "sensor.alice_heart_rate", state: "84", last_updated: new Date(Date.now() - 7200000).toISOString() },
+    { state: "100", last_updated: new Date(Date.now() - 3600000).toISOString() },
   ]];
 };
-await card._loadHistory(["sensor.heart_rate_alice"], "heart-test");
+await card._loadHistory(["sensor.alice_heart_rate"], "heart-test");
 assert.match(requestedHistoryPath, /end_time=/);
-assert.deepEqual(card._history["sensor.heart_rate_alice"].map((point) => point.v), [84, 100]);
-assert.equal(globalThis.localStorage.getItem("health-bridge-dashboard-card:expanded:alice"), "heart");
+assert.deepEqual(card._history["sensor.alice_heart_rate"].map((point) => point.v), [84, 100]);
+assert.equal(globalThis.localStorage.getItem("life-dashboard-card:expanded:alice"), "heart");
 card._toggleChart("heart");
 assert.equal(card._expandedChart, "activity");
-assert.equal(globalThis.localStorage.getItem("health-bridge-dashboard-card:expanded:alice"), "activity");
+assert.equal(globalThis.localStorage.getItem("life-dashboard-card:expanded:alice"), "activity");
 card._toggleChart("activity");
 assert.equal(card._expandedChart, "heart");
 card.setConfig({ language: "en", show_activity: false });
@@ -186,21 +186,22 @@ card.hass = {
   ...card._hass,
   states: {
     ...card._hass.states,
-    "sensor.heart_rate_alice": { state: "73", attributes: { unit_of_measurement: "bpm" } },
+    "sensor.alice_heart_rate": { state: "73", last_changed: "2026-11-14T12:01:00Z", attributes: { unit_of_measurement: "bpm" } },
   },
 };
-assert.equal(renderCount, 1, "a displayed Health Bridge value change must rerender the card");
+assert.equal(renderCount, 1, "a displayed Life Dashboard value change must rerender the card");
 assert.deepEqual(card.getGridOptions(), { columns: 12, min_columns: 4 });
-assert.equal(window.customCards[0].type, "health-bridge-dashboard-card");
+assert.equal(window.customCards[0].type, "life-dashboard-card");
 
 const sleepCard = new Card();
 sleepCard.setConfig({ language: "en", days: 3, show_activity: false, show_heart_rate: false, show_body: false });
 sleepCard.hass = {
   language: "en",
   states: {
-    "sensor.sleep_deep_hours_sleeper": { state: "1.5", attributes: { unit_of_measurement: "h" } },
-    "sensor.sleep_core_hours_sleeper": { state: "4.2", attributes: { unit_of_measurement: "h" } },
-    "sensor.sleep_rem_hours_sleeper": { state: "1.8", attributes: { unit_of_measurement: "h" } },
+    "sensor.sleeper_last_sleep_asleep": { state: "7.5", attributes: { unit_of_measurement: "h" } },
+    "sensor.sleeper_last_sleep_deep": { state: "1.5", attributes: { unit_of_measurement: "h" } },
+    "sensor.sleeper_last_sleep_light": { state: "4.2", attributes: { unit_of_measurement: "h" } },
+    "sensor.sleeper_last_sleep_rem": { state: "1.8", attributes: { unit_of_measurement: "h" } },
   },
   callApi: async () => [],
 };
@@ -215,19 +216,20 @@ assert.match(sleepCard.shadowRoot.innerHTML, /fill="#7986cb"/);
 assert.match(sleepCard.shadowRoot.innerHTML, /fill="#26c6da"/);
 assert.doesNotMatch(sleepCard.shadowRoot.innerHTML, /(?:NaN|Infinity)/);
 const previousSleep = Date.now() - 86400000;
-sleepCard._history["sensor.sleep_deep_hours_sleeper"] = [{ t: previousSleep, v: 2.0 }];
-sleepCard._history["sensor.sleep_core_hours_sleeper"] = [{ t: previousSleep, v: 3.8 }];
-sleepCard._history["sensor.sleep_rem_hours_sleeper"] = [{ t: previousSleep, v: 1.6 }];
+sleepCard._history["sensor.sleeper_last_sleep_deep"] = [{ t: previousSleep, v: 2.0 }];
+sleepCard._history["sensor.sleeper_last_sleep_light"] = [{ t: previousSleep, v: 3.8 }];
+sleepCard._history["sensor.sleeper_last_sleep_rem"] = [{ t: previousSleep, v: 1.6 }];
 sleepCard._render();
 assert.match(sleepCard.shadowRoot.innerHTML, />2\.0 h<\/title>/);
 assert.match(sleepCard.shadowRoot.innerHTML, />3\.8 h<\/title>/);
 assert.match(sleepCard.shadowRoot.innerHTML, />1\.6 h<\/title>/);
 
 sleepCard.setConfig({ language: "ru", days: 3, show_activity: false, show_heart_rate: false, show_body: false,
-  entities: { sleep_deep_hours: "sensor.sleep_deep_hours_sleeper" } });
+  entities: { sleep_deep_hours: "sensor.sleeper_last_sleep_deep" } });
 sleepCard.hass = {
   language: "ru",
-  states: { "sensor.sleep_deep_hours_sleeper": { state: "1.5", attributes: { unit_of_measurement: "h" } } },
+  states: { "sensor.sleeper_last_sleep_asleep": { state: "7.5", attributes: { unit_of_measurement: "h" } },
+    "sensor.sleeper_last_sleep_deep": { state: "1.5", attributes: { unit_of_measurement: "h" } } },
   callApi: async () => [],
 };
 assert.match(sleepCard.shadowRoot.innerHTML, /Фазы сна · 3 дня/);
